@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    serverComponentsExternalPackages: ["node-cron"],
+    instrumentationHook: true
+  }
 };
 
 export default nextConfig;

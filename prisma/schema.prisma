@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Keyword {
+  id        String     @id @default(uuid())
+  text      String     @unique
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  hotTopics HotTopic[]
+}
+
+model HotTopic {
+  id         String   @id @default(uuid())
+  title      String
+  summary    String
+  url        String?
+  source     String   // e.g. "twitter", "hackernews"
+  confidence Float    @default(0.0) // 0 to 1 score from AI
+  createdAt  DateTime @default(now())
+  
+  keywordId  String
+  keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+}
