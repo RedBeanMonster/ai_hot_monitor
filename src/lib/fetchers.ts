@@ -48,6 +48,10 @@ export async function fetchFromTwitter(keyword: string): Promise<RawHotTopic[]> 
     }));
   } catch (error) {
     console.error(`Failed to fetch from Twitter for ${keyword}:`, error);
+    return [];
+  }
+}
+
 // ==============================
 // 2. Headless Web Crawler (Hacker News example)
 // ==============================
