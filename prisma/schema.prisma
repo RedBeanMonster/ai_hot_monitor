@@ -28,3 +28,46 @@ model HotTopic {
   keywordId  String
   keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
 }
+
+// 功能一：每日 10:00 公共热点看板（Top 5）
+model DailyHotspot {
+  id         String   @id @default(uuid())
+  boardDate  String // YYYY-MM-DD，看板归属日期
+  rank       Int // 1..5，rank=1 为头条，占据最大网格
+  title      String
+  summary    String
+  evolution  String? // 事件演进脉络
+  analysis   String? // AI 防伪/价值判定报告
+  sources    String   @default("[]") // JSON 字符串数组，原始信源链接
+  confidence Float    @default(0.0)
+  createdAt  DateTime @default(now())
+
+  @@unique([boardDate, rank])
+}
+
+// 功能三：领域周期性深挖配置
+model Domain {
+  id            String           @id @default(uuid())
+  name          String           @unique // 例如 "AI编程"、"多模态生成"
+  intervalHours Int              @default(24) // 可选 1/6/12/24/48
+  isActive      Boolean          @default(true)
+  lastRunAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  briefings     DomainBriefing[]
+}
+
+// 功能三：生成的领域深度简报
+model DomainBriefing {
+  id          String   @id @default(uuid())
+  title       String
+  summary     String // 一句话概览
+  content     String // 结构化章节 JSON 字符串
+  sourceCount Int      @default(0)
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}

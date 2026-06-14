@@ -1,238 +1,186 @@
-"use client";
+import Link from "next/link";
+import { Flame, ExternalLink, Clock3 } from "lucide-react";
+import { prisma } from "@/lib/prisma";
+import { CardSpotlight } from "@/components/ui/card-spotlight";
+import { TextGenerateEffect } from "@/components/ui/text-generate-effect";
+import { BoardActions } from "@/components/board-actions";
 
-import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { Terminal, Plus, Trash2, Cpu, Activity, Clock, Zap, RefreshCw } from "lucide-react";
+export const dynamic = "force-dynamic";
 
-export default function Home() {
-  const [keywords, setKeywords] = useState<{ id: string; text: string }[]>([]);
-  const [newKeyword, setNewKeyword] = useState("");
-  const [time, setTime] = useState("");
-  const [topics, setTopics] = useState<any[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const previouslySeenIds = useRef<Set<string>>(new Set());
+type BoardTopic = {
+  id: string;
+  rank: number;
+  title: string;
+  summary: string;
+  evolution: string | null;
+  analysis: string | null;
+  sources: string[];
+  confidence: number;
+};
 
-  const fetchKeywords = async () => {
-    try {
-      const res = await fetch("/api/keywords");
-      const data = await res.json();
-      if (data.keywords) setKeywords(data.keywords);
-    } catch (e) {
-      console.error("Failed to fetch keywords:", e);
-    }
+async function getBoard(): Promise<{ boardDate: string | null; topics: BoardTopic[] }> {
+  const latest = await prisma.dailyHotspot.findFirst({
+    orderBy: { boardDate: "desc" },
+    select: { boardDate: true },
+  });
+  if (!latest) return { boardDate: null, topics: [] };
+
+  const rows = await prisma.dailyHotspot.findMany({
+    where: { boardDate: latest.boardDate },
+    orderBy: { rank: "asc" },
+  });
+
+  return {
+    boardDate: latest.boardDate,
+    topics: rows.map((r) => ({
+      id: r.id,
+      rank: r.rank,
+      title: r.title,
+      summary: r.summary,
+      evolution: r.evolution,
+      analysis: r.analysis,
+      sources: parseSources(r.sources),
+      confidence: r.confidence,
+    })),
   };
+}
 
-  useEffect(() => {
-    setTime(new Date().toLocaleTimeString());
-    const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
+function parseSources(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
-
-    fetchKeywords();
-
-    const fetchLatestTopics = async () => {
-      try {
-        const res = await fetch("/api/hot-topics");
-        const data = await res.json();
-        
-        if (data.topics && data.topics.length > 0) {
-          data.topics.forEach((t: any) => {
-            if (!previouslySeenIds.current.has(t.id) && previouslySeenIds.current.size > 0) {
-              if (Notification.permission === "granted") {
-                 new Notification(`🔥 新热点: ${t.keyword?.text || "AI"}`, {
-                    body: t.title,
-                 });
-              }
-            }
-            previouslySeenIds.current.add(t.id);
-          });
-          setTopics(data.topics);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    };
-
-    fetchLatestTopics();
-    const syncTimer = setInterval(fetchLatestTopics, 300_000); 
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(syncTimer);
-    };
-  }, []);
-
-  const triggerManualSync = async () => {
-     setIsSyncing(true);
-     try {
-       await fetch("/api/sync");
-       // Re-fetch topics after manual sync finishes
-       const res = await fetch("/api/hot-topics");
-       const data = await res.json();
-       if (data.topics) {
-          data.topics.forEach((t: any) => previouslySeenIds.current.add(t.id));
-          setTopics(data.topics);
-       }
-     } catch(e) {
-       console.error("Sync Error", e);
-     }
-     setIsSyncing(false);
-  };
-
-  const addKeyword = async () => {
-    const text = newKeyword.trim();
-    if (!text || keywords.some((k) => k.text === text)) return;
-    try {
-      const res = await fetch("/api/keywords", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      if (data.keyword) {
-        setKeywords((prev) => [data.keyword, ...prev]);
-        setNewKeyword("");
-      }
-    } catch (e) {
-      console.error("Failed to add keyword:", e);
-    }
-  };
-
-  const removeKeyword = async (kw: string) => {
-    try {
-      await fetch(`/api/keywords?text=${encodeURIComponent(kw)}`, { method: "DELETE" });
-      setKeywords((prev) => prev.filter((k) => k.text !== kw));
-    } catch (e) {
-      console.error("Failed to remove keyword:", e);
-    }
-  };
+export default async function Home() {
+  const { boardDate, topics } = await getBoard();
 
   return (
-    <div className="min-h-screen p-4 md:p-8 flex flex-col md:flex-row gap-6">
-      
-      {/* Sidebar - Control Panel */}
-      <motion.aside 
-        initial={{ x: -50, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="w-full md:w-80 glass-panel rounded-xl p-5 flex flex-col h-fit md:sticky top-8"
-      >
-        <div className="flex items-center gap-3 mb-8 border-b border-white/10 pb-4">
-          <Terminal className="neon-text w-6 h-6" />
-          <h1 className="text-xl font-bold tracking-wider uppercase text-white">
-            <span className="neon-text">SYS</span>.MONITOR_
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2 mb-4">
-          <Cpu className="text-white/50 w-4 h-4" />
-          <h2 className="text-sm font-semibold text-white/70 uppercase tracking-widest">Target Keywords</h2>
-        </div>
-
-        <div className="flex gap-2 mb-6">
-          <input 
-            type="text" 
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addKeyword()}
-            placeholder="Add node..."
-            className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-neon-blue transition-colors text-white"
+    <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8 md:py-12">
+      <section className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="max-w-3xl">
+          <p className="mb-2 flex items-center gap-2 text-xs tracking-[0.24em] text-[var(--color-mint)] uppercase">
+            <Clock3 className="h-3.5 w-3.5" /> Daily 10:00 · Public Hotspot Board
+          </p>
+          <TextGenerateEffect
+            words="每日 10:00 · 经 AI 验证的 Top 5 行业热点"
+            className="text-zinc-50"
+            duration={0.4}
           />
-          <button 
-            onClick={addKeyword}
-            className="bg-neon-blue/20 hover:bg-neon-blue/30 text-neon-blue p-2 rounded border border-neon-blue/50 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+          <p className="mt-4 text-sm text-zinc-400">
+            自动聚合过去 24 小时全网多源 AI 动态，经 DeepSeek 去重、聚类、防伪裁判后，呈现最具含金量的进展。
+            {boardDate ? (
+              <span className="ml-1 text-zinc-500">当前看板：{boardDate}</span>
+            ) : null}
+          </p>
         </div>
+        <BoardActions />
+      </section>
 
-        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-          {keywords.map((kw, i) => (
-            <motion.div 
-              key={kw.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.1 }}
-              className="group flex items-center justify-between bg-white/5 border border-white/10 rounded px-3 py-2 hover:border-white/30 transition-colors"
-            >
-              <span className="text-sm text-white/90 font-medium">#{kw.text}</span>
-              <button 
-                onClick={() => removeKeyword(kw.text)}
-                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </motion.div>
-          ))}
-        </div>
-
-        <div className="mt-8 pt-4 border-t border-white/10">
-           <div className="flex justify-between items-center text-xs text-white/50">
-             <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> STATUS: <span className="text-green-400 animate-pulse">ACTIVE</span></span>
-             <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {time || "--:--:--"}</span>
-           </div>
-        </div>
-      </motion.aside>
-
-      {/* Main Content - Data Stream */}
-      <motion.main 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.7, delay: 0.2 }}
-        className="flex-1 glass-panel rounded-xl p-5 md:p-8 neon-border flex flex-col"
-      >
-        <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <Zap className="neon-text w-6 h-6" />
-            <h2 className="text-xl font-bold tracking-wider text-white">DATA_STREAM <span className="text-white/30 text-sm font-normal">/ LATEST EVENTS</span></h2>
+      {topics.length === 0 ? (
+        <CardSpotlight className="border-white/10 bg-[var(--color-graphite-panel)] p-10">
+          <div className="relative z-20 flex flex-col items-center gap-3 text-center">
+            <Flame className="h-8 w-8 text-[var(--color-mint)]" />
+            <p className="text-sm text-zinc-300">
+              暂无看板数据。点击右上角「立即刷新看板」抓取并生成今日 Top 5。
+            </p>
           </div>
-          <button 
-            onClick={triggerManualSync}
-            disabled={isSyncing}
-            className={`flex items-center gap-2 px-3 py-1.5 bg-neon-blue/10 hover:bg-neon-blue/20 text-neon-blue text-xs font-bold rounded border border-neon-blue/50 transition-colors ${isSyncing ? "opacity-50 cursor-not-allowed" : ""}`}
-          >
-            <RefreshCw className={`w-3 h-3 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "SYNCING..." : "FORCE SYNC"}
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-2">
-          {topics.length === 0 ? (
-            <div className="text-center text-white/30 mt-10">No latest hot topics found. Wait for 10 AM sync or trigger Force Sync.</div>
-          ) : (
-            topics.map((topic, index) => (
-              <motion.div 
+        </CardSpotlight>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:auto-rows-[15rem] md:grid-cols-3">
+          {topics.map((topic) => {
+            const headline = topic.rank === 1;
+            return (
+              <CardSpotlight
                 key={topic.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="relative pl-6 pb-6 border-l border-white/10 last:border-0 last:pb-0"
+                radius={headline ? 420 : 280}
+                className={[
+                  "rounded-2xl border bg-[var(--color-graphite-panel)] p-6",
+                  headline
+                    ? "mint-breathe border-[var(--color-mint-border)] md:col-span-2 md:row-span-2"
+                    : "border-white/10",
+                ].join(" ")}
               >
-                <div className="absolute w-3 h-3 rounded-full bg-neon-blue -left-[6px] top-1 shadow-[0_0_10px_#00f0ff]"></div>
-                <div className="bg-white/5 border border-white/10 rounded-lg p-5 hover:bg-white/10 transition-colors relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 px-3 py-1 bg-neon-blue/20 text-neon-blue text-[10px] rounded-bl-lg font-bold">
-                    {(topic.confidence * 100).toFixed(0)}% CONFIDENCE
+                <div className="relative z-20 flex h-full flex-col">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span
+                      className={[
+                        "flex h-6 w-6 items-center justify-center rounded-md font-mono text-xs",
+                        headline
+                          ? "bg-[var(--color-mint)] text-[#0a0b0c]"
+                          : "border border-white/10 text-[var(--color-mint)]",
+                      ].join(" ")}
+                    >
+                      {topic.rank}
+                    </span>
+                    {headline ? (
+                      <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-mint-bright)]">
+                        <Flame className="h-3.5 w-3.5" /> 头条
+                      </span>
+                    ) : null}
+                    <span className="ml-auto rounded-full border border-[var(--color-mint-border)] bg-[var(--color-mint-dim)] px-2 py-0.5 text-xs text-[var(--color-mint-bright)]">
+                      {(topic.confidence * 100).toFixed(0)}%
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 rounded bg-white/10 text-xs text-white/70">#{topic.keyword?.text || "General"}</span>
-                    <span className="text-xs text-white/40">Sources: {topic.source} • {new Date(topic.createdAt).toLocaleString()}</span>
+
+                  <h3
+                    className={[
+                      "font-semibold text-zinc-50",
+                      headline ? "text-xl md:text-2xl" : "text-base",
+                    ].join(" ")}
+                  >
+                    {topic.title}
+                  </h3>
+
+                  <p
+                    className={[
+                      "mt-2 leading-6 text-zinc-300",
+                      headline ? "text-sm" : "line-clamp-3 text-xs",
+                    ].join(" ")}
+                  >
+                    {topic.summary}
+                  </p>
+
+                  {headline && topic.evolution ? (
+                    <p className="mt-3 border-l-2 border-[var(--color-mint-border)] pl-3 text-xs leading-6 text-zinc-400">
+                      <span className="text-[var(--color-mint)]">演进脉络 · </span>
+                      {topic.evolution}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-auto flex flex-wrap items-center gap-3 pt-4">
+                    {topic.sources.slice(0, headline ? 3 : 1).map((src, i) => (
+                      <a
+                        key={i}
+                        href={src}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-[var(--color-mint)] transition hover:text-[var(--color-mint-bright)]"
+                      >
+                        <ExternalLink className="h-3 w-3" /> 信源 {i + 1}
+                      </a>
+                    ))}
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-2 group-hover:text-neon-blue transition-colors">{topic.title}</h3>
-                  <p className="text-sm text-white/60 mb-4 leading-relaxed">{topic.summary}</p>
-                  {topic.url && (
-                    <a href={topic.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-neon-blue hover:underline">
-                      _VIEW_SOURCE
-                    </a>
-                  )}
                 </div>
-              </motion.div>
-            ))
-          )}
+              </CardSpotlight>
+            );
+          })}
         </div>
-      </motion.main>
-      
-    </div>
+      )}
+
+      <p className="text-center text-xs text-zinc-600">
+        想追踪特定关键词？前往{" "}
+        <Link href="/monitor" className="text-[var(--color-mint)] hover:underline">
+          关键词监控
+        </Link>{" "}
+        ；需要长周期深度总结？查看{" "}
+        <Link href="/briefings" className="text-[var(--color-mint)] hover:underline">
+          领域深挖简报
+        </Link>
+        。
+      </p>
+    </main>
   );
 }
